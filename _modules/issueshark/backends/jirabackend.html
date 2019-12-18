@@ -1,0 +1,881 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>issueshark.backends.jirabackend &mdash; issueSHARK 2.0.4 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../../../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../../../_static/jquery.js"></script>
+        <script type="text/javascript" src="../../../_static/underscore.js"></script>
+        <script type="text/javascript" src="../../../_static/doctools.js"></script>
+        <script type="text/javascript" src="../../../_static/language_data.js"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> issueSHARK
+          
+
+          
+            
+            <img src="../../../_static/SmartSHARK_read_the_docs_logo.png" class="logo" alt="Logo"/>
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../intro.html">1. Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../extension.html">2. How to Extend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">3. API Documentation</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">issueSHARK</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>issueshark.backends.jirabackend</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for issueshark.backends.jirabackend</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">copy</span>
+
+<span class="kn">import</span> <span class="nn">dateutil</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">mongoengine</span> <span class="kn">import</span> <span class="n">DoesNotExist</span>
+
+<span class="kn">from</span> <span class="nn">issueshark.backends.basebackend</span> <span class="kn">import</span> <span class="n">BaseBackend</span>
+<span class="kn">from</span> <span class="nn">urllib.parse</span> <span class="kn">import</span> <span class="n">urlparse</span><span class="p">,</span> <span class="n">quote_plus</span>
+<span class="kn">from</span> <span class="nn">jira</span> <span class="kn">import</span> <span class="n">JIRA</span><span class="p">,</span> <span class="n">JIRAError</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">pycoshark.mongomodels</span> <span class="kn">import</span> <span class="o">*</span>
+
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s1">&#39;backend&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">JiraException</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Exception that is thrown if there was a problem with the JIRA API</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<div class="viewcode-block" id="JiraBackend"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend">[docs]</a><span class="k">class</span> <span class="nc">JiraBackend</span><span class="p">(</span><span class="n">BaseBackend</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Backend that collects data via the JIRA API</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">identifier</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Identifier of the backend (jira)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="s1">&#39;jira&#39;</span>
+
+<div class="viewcode-block" id="JiraBackend.__init__"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfg</span><span class="p">,</span> <span class="n">issue_system_id</span><span class="p">,</span> <span class="n">project_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialization</span>
+<span class="sd">        Initializes the people dictionary see: :func:`~issueshark.backends.jirabackend.JiraBackend._get_people`</span>
+<span class="sd">        Initializes the attribute mapping: Maps attributes from the JIRA API to our database design</span>
+
+
+<span class="sd">        :param cfg: holds als configuration. Object of class :class:`~issueshark.config.Config`</span>
+<span class="sd">        :param issue_system_id: id of the issue system for which data should be collected. :class:`bson.objectid.ObjectId`</span>
+<span class="sd">        :param project_id: id of the project to which the issue system belongs. :class:`bson.objectid.ObjectId`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">issue_system_id</span><span class="p">,</span> <span class="n">project_id</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">debug_level</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">people</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">jira_client</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">jira_mongo_terminology_mapping</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;summary&#39;</span><span class="p">:</span> <span class="s1">&#39;title&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;description&#39;</span><span class="p">:</span> <span class="s1">&#39;desc&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;created&#39;</span><span class="p">:</span> <span class="s1">&#39;created_at&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;updated&#39;</span><span class="p">:</span> <span class="s1">&#39;updated_at&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;creator&#39;</span><span class="p">:</span> <span class="s1">&#39;creator_id&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;reporter&#39;</span><span class="p">:</span> <span class="s1">&#39;reporter_id&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;issuetype&#39;</span><span class="p">:</span> <span class="s1">&#39;issue_type&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;priority&#39;</span><span class="p">:</span> <span class="s1">&#39;priority&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;status&#39;</span><span class="p">:</span> <span class="s1">&#39;status&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;versions&#39;</span><span class="p">:</span> <span class="s1">&#39;affects_versions&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;components&#39;</span><span class="p">:</span> <span class="s1">&#39;components&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;labels&#39;</span><span class="p">:</span> <span class="s1">&#39;labels&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;resolution&#39;</span><span class="p">:</span> <span class="s1">&#39;resolution&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;fixVersions&#39;</span><span class="p">:</span> <span class="s1">&#39;fix_versions&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;assignee&#39;</span><span class="p">:</span> <span class="s1">&#39;assignee_id&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;issuelinks&#39;</span><span class="p">:</span> <span class="s1">&#39;issue_links&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;parent&#39;</span><span class="p">:</span> <span class="s1">&#39;parent_issue_id&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;timeoriginalestimate&#39;</span><span class="p">:</span> <span class="s1">&#39;original_time_estimate&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;environment&#39;</span><span class="p">:</span> <span class="s1">&#39;environment&#39;</span>
+        <span class="p">}</span></div>
+
+<div class="viewcode-block" id="JiraBackend.process"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Processes the issues:</span>
+
+<span class="sd">        1) Get all issues that are updated since the last time we executed this</span>
+
+<span class="sd">        2) Go through all issues step by step, see: :func:`~issueshark.backends.jirabackend.JiraBackend._process_issue`</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting the collection process...&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">use_token</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="n">JiraException</span><span class="p">(</span><span class="s1">&#39;Jira does not support tokens! Use issue_user and issue_password instead&#39;</span><span class="p">)</span>
+
+        <span class="n">url_to_jira</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_create_url_to_jira_rest_interface</span><span class="p">()</span>
+
+        <span class="c1"># Connect to jira</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">jira_client</span> <span class="o">=</span> <span class="n">JIRA</span><span class="p">(</span>
+            <span class="p">{</span><span class="s1">&#39;server&#39;</span><span class="p">:</span> <span class="n">url_to_jira</span><span class="p">},</span>
+            <span class="n">basic_auth</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">issue_user</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">issue_password</span><span class="p">),</span>
+            <span class="n">proxies</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get_proxy_dictionary</span><span class="p">()</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Get last modification date (since then, we will collect bugs)</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_create_issue_query</span><span class="p">()</span>
+
+        <span class="c1"># We search our intital set of issues</span>
+        <span class="n">issues</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jira_client</span><span class="o">.</span><span class="n">search_issues</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">startAt</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">maxResults</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="s1">&#39;summary&#39;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Found </span><span class="si">%d</span><span class="s1"> issues via url </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="p">(</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">issues</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">jira_client</span><span class="o">.</span><span class="n">_get_url</span><span class="p">(</span><span class="s1">&#39;search?jql=</span><span class="si">%s</span><span class="s1">&amp;startAt=0&amp;maxResults=50&#39;</span> <span class="o">%</span> <span class="n">quote_plus</span><span class="p">(</span><span class="n">query</span><span class="p">))</span>
+        <span class="p">))</span>
+
+        <span class="c1"># If no new bugs found, return</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">issues</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;No new issues found. Exiting...&#39;</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Otherwise, go through all issues</span>
+        <span class="n">processed_results</span> <span class="o">=</span> <span class="mi">50</span>
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">issues</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Processing </span><span class="si">%d</span><span class="s2"> issues...&quot;</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">issues</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">issue</span> <span class="ow">in</span> <span class="n">issues</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_process_issue</span><span class="p">(</span><span class="n">issue</span><span class="o">.</span><span class="n">key</span><span class="p">)</span>
+
+            <span class="c1"># Go through the next issues</span>
+            <span class="n">issues</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jira_client</span><span class="o">.</span><span class="n">search_issues</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">startAt</span><span class="o">=</span><span class="n">processed_results</span><span class="p">,</span> <span class="n">maxResults</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="s1">&#39;summary&#39;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Found </span><span class="si">%d</span><span class="s1"> issues via url </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span>
+                         <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">issues</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">jira_client</span><span class="o">.</span><span class="n">_get_url</span><span class="p">(</span><span class="s1">&#39;search?jql=</span><span class="si">%s</span><span class="s1">&amp;startAt=</span><span class="si">%d</span><span class="s1">&amp;maxResults=50&#39;</span> <span class="o">%</span>
+                                                                <span class="p">(</span><span class="n">quote_plus</span><span class="p">(</span><span class="n">query</span><span class="p">),</span> <span class="n">processed_results</span><span class="p">))))</span>
+            <span class="n">processed_results</span> <span class="o">+=</span> <span class="mi">50</span></div>
+
+<div class="viewcode-block" id="JiraBackend._create_url_to_jira_rest_interface"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._create_url_to_jira_rest_interface">[docs]</a>    <span class="k">def</span> <span class="nf">_create_url_to_jira_rest_interface</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates the url to the jira rest interface</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># We need to get the name of the project (how it is called in jira, e.g. &#39;ZOOKEEPER&#39;)</span>
+        <span class="n">parsed_url</span> <span class="o">=</span> <span class="n">urlparse</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">tracking_url</span><span class="p">)</span>
+
+        <span class="n">rest_url</span> <span class="o">=</span> <span class="n">parsed_url</span><span class="o">.</span><span class="n">scheme</span><span class="o">+</span><span class="s2">&quot;://&quot;</span><span class="o">+</span><span class="n">parsed_url</span><span class="o">.</span><span class="n">netloc</span>
+
+        <span class="c1"># If the path does not start with /rest, meaning there is something in between (e.g. &quot;/jira&quot;), we need</span>
+        <span class="c1"># to add that to the server</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">parsed_url</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;/rest&#39;</span><span class="p">):</span>
+            <span class="n">rest_url</span> <span class="o">=</span> <span class="n">rest_url</span> <span class="o">+</span> <span class="s1">&#39;/&#39;</span> <span class="o">+</span> <span class="n">parsed_url</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;/&#39;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">rest_url</span></div>
+
+<div class="viewcode-block" id="JiraBackend._create_issue_query"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._create_issue_query">[docs]</a>    <span class="k">def</span> <span class="nf">_create_issue_query</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates the issue query, including sorting</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get project name from last part of url</span>
+        <span class="n">project_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">tracking_url</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;=&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1"># Get last modification date</span>
+        <span class="n">last_issue</span> <span class="o">=</span> <span class="n">Issue</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s1">&#39;-updated_at&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">only</span><span class="p">(</span>
+            <span class="s1">&#39;updated_at&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+        <span class="c1"># If an issue was found, we just collect data which was updated since the last issue</span>
+        <span class="k">if</span> <span class="n">last_issue</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">starting_date</span> <span class="o">=</span> <span class="n">last_issue</span><span class="o">.</span><span class="n">updated_at</span>
+            <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;project=</span><span class="si">%s</span><span class="s2"> and updatedDate &gt; &#39;</span><span class="si">%s</span><span class="s2">&#39; ORDER BY updatedDate ASC&quot;</span> <span class="o">%</span> <span class="p">(</span>
+                <span class="n">project_name</span><span class="p">,</span>
+                <span class="n">starting_date</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%Y/%m/</span><span class="si">%d</span><span class="s1"> %H:%M&#39;</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;project=</span><span class="si">%s</span><span class="s2"> ORDER BY updatedDate ASC&quot;</span> <span class="o">%</span> <span class="n">project_name</span>
+
+        <span class="k">return</span> <span class="n">query</span></div>
+
+<div class="viewcode-block" id="JiraBackend._get_newest_issue"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._get_newest_issue">[docs]</a>    <span class="k">def</span> <span class="nf">_get_newest_issue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the issue with the given id from the jira rest api</span>
+
+<span class="sd">        :param jira_issue_id: id of the issue that is to be retrieved (e.g. &quot;ZOOKEEPER-1&quot;)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">issue_not_retrieved</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">issue</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Retrieve the issue via the client and retry as long as the timeout is not running out</span>
+        <span class="n">timeout_start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="n">timeout</span> <span class="o">=</span> <span class="mi">300</span>  <span class="c1"># 5 minutes</span>
+        <span class="k">while</span> <span class="n">issue_not_retrieved</span> <span class="ow">and</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">timeout_start</span> <span class="o">+</span> <span class="n">timeout</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Processing issue </span><span class="si">%s</span><span class="s1"> via url </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="p">(</span>
+                    <span class="n">jira_issue_id</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">jira_client</span><span class="o">.</span><span class="n">_get_url</span><span class="p">(</span><span class="s1">&#39;issue/</span><span class="si">%s</span><span class="s1">?expand=changelog&#39;</span> <span class="o">%</span> <span class="n">jira_issue_id</span><span class="p">))</span>
+                <span class="p">)</span>
+                <span class="n">issue</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jira_client</span><span class="o">.</span><span class="n">issue</span><span class="p">(</span><span class="n">jira_issue_id</span><span class="p">,</span> <span class="n">expand</span><span class="o">=</span><span class="s1">&#39;changelog&#39;</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Got fields: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="nb">vars</span><span class="p">(</span><span class="n">issue</span><span class="o">.</span><span class="n">fields</span><span class="p">))</span>
+                <span class="n">issue_not_retrieved</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">except</span> <span class="n">JIRAError</span><span class="p">:</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span>
+                <span class="k">pass</span>
+
+        <span class="k">return</span> <span class="n">issue</span></div>
+
+<div class="viewcode-block" id="JiraBackend._process_issue"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._process_issue">[docs]</a>    <span class="k">def</span> <span class="nf">_process_issue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Processes the issue in three steps:</span>
+
+<span class="sd">        1) Get the issue with the given id from the jira rest api. See: :func:`~issueshark.backends.jirabackend.JiraBackend._get_newest_issue`</span>
+
+<span class="sd">        2) update the issue in the database (or store it if it was not parsed before). See: :func:`~issueshark.backends.jirabackend.JiraBackend._store_jira_issue`</span>
+
+<span class="sd">        3) Stores all events of this issue. See: :func:`~issueshark.backends.jirabackend.JiraBackend._store_events`</span>
+
+<span class="sd">        4) Stores all comments of this issue. See: :func:`~issueshark.backends.jirabackend.JiraBackend._store_comments`</span>
+
+
+<span class="sd">        :param jira_issue_id: id of the issue that is to be retrieved (e.g. &quot;ZOOKEEPER-1&quot;)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get newest issue version</span>
+        <span class="n">jira_issue</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_newest_issue</span><span class="p">(</span><span class="n">jira_issue_id</span><span class="p">)</span>
+
+        <span class="c1"># Update it in database</span>
+        <span class="n">mongo_issue</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_store_jira_issue</span><span class="p">(</span><span class="n">jira_issue</span><span class="p">)</span>
+
+        <span class="c1"># Store events</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store_events</span><span class="p">(</span><span class="n">jira_issue</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+
+        <span class="c1"># Store comments</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store_comments</span><span class="p">(</span><span class="n">jira_issue</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="o">.</span><span class="n">id</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="JiraBackend._store_comments"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._store_comments">[docs]</a>    <span class="k">def</span> <span class="nf">_store_comments</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue</span><span class="p">,</span> <span class="n">mongo_issue_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Processes the comments from an jira issue</span>
+
+<span class="sd">        :param issue: original jira issue</span>
+<span class="sd">        :param issue_id:  Object of class :class:`bson.objectid.ObjectId`. Identifier of the document that holds \</span>
+<span class="sd">        the issue information</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Go through all comments of the issue</span>
+        <span class="n">comments_to_insert</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Processing </span><span class="si">%d</span><span class="s1"> comments...&#39;</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">jira_issue</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">comment</span><span class="o">.</span><span class="n">comments</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">comment</span> <span class="ow">in</span> <span class="n">jira_issue</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">comment</span><span class="o">.</span><span class="n">comments</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Processing comment: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">comment</span><span class="p">)</span>
+            <span class="n">created_at</span> <span class="o">=</span> <span class="n">dateutil</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">comment</span><span class="o">.</span><span class="n">created</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">mongo_comment</span> <span class="o">=</span> <span class="n">IssueComment</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">external_id</span><span class="o">=</span><span class="n">comment</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue_id</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Comment already in database, id: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">mongo_comment</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+                <span class="n">mongo_comment</span> <span class="o">=</span> <span class="n">IssueComment</span><span class="p">(</span>
+                    <span class="n">external_id</span><span class="o">=</span><span class="n">comment</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                    <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue_id</span><span class="p">,</span>
+                    <span class="n">created_at</span><span class="o">=</span><span class="n">created_at</span><span class="p">,</span>
+                    <span class="n">author_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">comment</span><span class="o">.</span><span class="n">author</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_user_email</span><span class="p">(</span><span class="n">comment</span><span class="o">.</span><span class="n">author</span><span class="p">),</span>
+                                               <span class="n">comment</span><span class="o">.</span><span class="n">author</span><span class="o">.</span><span class="n">displayName</span><span class="p">),</span>
+                    <span class="n">comment</span><span class="o">=</span><span class="n">comment</span><span class="o">.</span><span class="n">body</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Resulting comment: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">mongo_comment</span><span class="p">)</span>
+                <span class="n">comments_to_insert</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mongo_comment</span><span class="p">)</span>
+
+        <span class="c1"># If comments need to be inserted -&gt; bulk insert</span>
+        <span class="k">if</span> <span class="n">comments_to_insert</span><span class="p">:</span>
+            <span class="n">IssueComment</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">comments_to_insert</span><span class="p">,</span> <span class="n">load_bulk</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="JiraBackend._store_jira_issue"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._store_jira_issue">[docs]</a>    <span class="k">def</span> <span class="nf">_store_jira_issue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Transforms the Jira issue to our issue model</span>
+
+<span class="sd">        :param jira_issue: original jira issue, like we got it from the Jira API</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># We can not return here, as the issue might be updated. This means, that the title could be updated</span>
+            <span class="c1"># as well as comments and new events</span>
+            <span class="n">mongo_issue</span> <span class="o">=</span> <span class="n">Issue</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">,</span> <span class="n">external_id</span><span class="o">=</span><span class="n">jira_issue</span><span class="o">.</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="n">mongo_issue</span> <span class="o">=</span> <span class="n">Issue</span><span class="p">(</span>
+                <span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">,</span>
+                <span class="n">external_id</span><span class="o">=</span><span class="n">jira_issue</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">at_name_jira</span><span class="p">,</span> <span class="n">at_name_mongo</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">jira_mongo_terminology_mapping</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="c1"># If the attribute is in the rest response set it</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">jira_issue</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">):</span>
+
+                <span class="n">jira_issue_fields</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">jira_issue</span><span class="o">.</span><span class="n">fields</span><span class="p">)</span>
+
+                <span class="c1"># special case issuelinks: PIG-1904 links to itself, we can not allow this or it creates the issue without data and throws an Exist error on mongo_issue.save()</span>
+                <span class="k">if</span> <span class="n">at_name_jira</span> <span class="o">==</span> <span class="s1">&#39;issuelinks&#39;</span><span class="p">:</span>
+                    <span class="n">new_issue_links</span> <span class="o">=</span> <span class="p">[]</span>
+                    <span class="k">for</span> <span class="n">issue_link</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_issue</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">issue_link</span><span class="p">,</span> <span class="s1">&#39;outwardIssue&#39;</span><span class="p">):</span>
+                            <span class="k">if</span> <span class="n">issue_link</span><span class="o">.</span><span class="n">outwardIssue</span><span class="o">.</span><span class="n">key</span> <span class="o">!=</span> <span class="n">jira_issue</span><span class="o">.</span><span class="n">key</span><span class="p">:</span>
+                                <span class="n">new_issue_links</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">issue_link</span><span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="k">if</span> <span class="n">issue_link</span><span class="o">.</span><span class="n">inwardIssue</span><span class="o">.</span><span class="n">key</span> <span class="o">!=</span> <span class="n">jira_issue</span><span class="o">.</span><span class="n">key</span><span class="p">:</span>
+                                <span class="n">new_issue_links</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">issue_link</span><span class="p">)</span>
+                    <span class="nb">setattr</span><span class="p">(</span><span class="n">jira_issue_fields</span><span class="p">,</span> <span class="s1">&#39;issuelinks&#39;</span><span class="p">,</span> <span class="n">new_issue_links</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">mongo_issue</span><span class="p">,</span> <span class="n">at_name_mongo</span><span class="p">),</span> <span class="nb">list</span><span class="p">):</span>
+                    <span class="c1"># Get the result and the current value and merge it together</span>
+                    <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_jira_field</span><span class="p">(</span><span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">)</span>
+                    <span class="n">current_value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">mongo_issue</span><span class="p">,</span> <span class="n">at_name_mongo</span><span class="p">,</span> <span class="nb">list</span><span class="p">())</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                        <span class="n">result</span> <span class="o">=</span> <span class="p">[</span><span class="n">result</span><span class="p">]</span>
+
+                    <span class="c1"># Extend</span>
+                    <span class="n">current_value</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">current_value</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">at_name_mongo</span> <span class="o">==</span> <span class="s1">&#39;issue_links&#39;</span><span class="p">:</span>
+                        <span class="n">current_value</span> <span class="o">=</span> <span class="p">[</span><span class="nb">dict</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">set</span><span class="p">([</span><span class="nb">tuple</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">items</span><span class="p">())</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">current_value</span><span class="p">])]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">current_value</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">current_value</span><span class="p">))</span>
+
+                    <span class="c1"># Set the attribute</span>
+                    <span class="nb">setattr</span><span class="p">(</span><span class="n">mongo_issue</span><span class="p">,</span> <span class="n">at_name_mongo</span><span class="p">,</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">current_value</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">setattr</span><span class="p">(</span><span class="n">mongo_issue</span><span class="p">,</span> <span class="n">at_name_mongo</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_jira_field</span><span class="p">(</span><span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">mongo_issue</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="JiraBackend._parse_jira_field"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._parse_jira_field">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_jira_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses the jira fields from the original issue</span>
+
+<span class="sd">        :param jira_issue_fields: fields of the original jira issue</span>
+<span class="sd">        :param at_name_jira: attribute name that should be returned</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">field_mapping</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;summary&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;description&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;created&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_date_field</span><span class="p">,</span>
+            <span class="s1">&#39;updated&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_date_field</span><span class="p">,</span>
+            <span class="s1">&#39;creator&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_author_details</span><span class="p">,</span>
+            <span class="s1">&#39;reporter&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_author_details</span><span class="p">,</span>
+            <span class="s1">&#39;issuetype&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;priority&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;status&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;versions&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_array_field</span><span class="p">,</span>
+            <span class="s1">&#39;components&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_array_field</span><span class="p">,</span>
+            <span class="s1">&#39;labels&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_array_field</span><span class="p">,</span>
+            <span class="s1">&#39;resolution&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;fixVersions&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_array_field</span><span class="p">,</span>
+            <span class="s1">&#39;assignee&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_author_details</span><span class="p">,</span>
+            <span class="s1">&#39;issuelinks&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_issue_links</span><span class="p">,</span>
+            <span class="s1">&#39;parent&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_parent_issue</span><span class="p">,</span>
+            <span class="s1">&#39;timeoriginalestimate&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;environment&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span>
+        <span class="p">}</span>
+
+        <span class="n">correct_function</span> <span class="o">=</span> <span class="n">field_mapping</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">at_name_jira</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">correct_function</span><span class="p">(</span><span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="JiraBackend._parse_string_field"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._parse_string_field">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_string_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses the string jira fields from the original issue</span>
+
+<span class="sd">        :param jira_issue_fields: fields of the original jira issue</span>
+<span class="sd">        :param at_name_jira: attribute name that should be returned</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">attribute</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">attribute</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">attribute</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">attribute</span></div>
+
+<div class="viewcode-block" id="JiraBackend._parse_date_field"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._parse_date_field">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_date_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses the date jira fields from the original issue</span>
+
+<span class="sd">        :param jira_issue_fields: fields of the original jira issue</span>
+<span class="sd">        :param at_name_jira: attribute name that should be returned</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">dateutil</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">))</span></div>
+
+<div class="viewcode-block" id="JiraBackend._parse_parent_issue"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._parse_parent_issue">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_parent_issue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses the parent issue field from the original issue</span>
+
+<span class="sd">        :param jira_issue_fields: fields of the original jira issue</span>
+<span class="sd">        :param at_name_jira: attribute name that should be returned</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">jira_issue_fields</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">key</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="JiraBackend._parse_author_details"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._parse_author_details">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_author_details</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses the author detail fields from the original issue</span>
+
+<span class="sd">        :param jira_issue_fields: fields of the original jira issue</span>
+<span class="sd">        :param at_name_jira: attribute name that should be returned</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">people</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">people</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">people</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_user_email</span><span class="p">(</span><span class="n">people</span><span class="p">),</span> <span class="n">people</span><span class="o">.</span><span class="n">displayName</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="JiraBackend._parse_array_field"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._parse_array_field">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_array_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses the array fields from the original issue</span>
+
+<span class="sd">        :param jira_issue_fields: fields of the original jira issue</span>
+<span class="sd">        :param at_name_jira: attribute name that should be returned</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">array_field</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">)</span>
+        <span class="n">new_array</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">array_field</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">):</span>
+                <span class="n">new_array</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_array</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">new_array</span></div>
+
+<div class="viewcode-block" id="JiraBackend._parse_issue_links"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._parse_issue_links">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_issue_links</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses the issue links field from the original issue</span>
+
+<span class="sd">        :param jira_issue_fields: fields of the original jira issue</span>
+<span class="sd">        :param at_name_jira: attribute name that should be returned</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">links</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">issue_link</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_issue_fields</span><span class="p">,</span> <span class="n">at_name_jira</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">issue_link</span><span class="p">,</span> <span class="s1">&#39;outwardIssue&#39;</span><span class="p">):</span>
+                <span class="n">issue_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">issue_link</span><span class="o">.</span><span class="n">outwardIssue</span><span class="o">.</span><span class="n">key</span><span class="p">)</span>
+                <span class="n">issue_type</span><span class="p">,</span> <span class="n">issue_effect</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_link_type_and_effect</span><span class="p">(</span><span class="n">issue_link</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">outward</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">issue_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">issue_link</span><span class="o">.</span><span class="n">inwardIssue</span><span class="o">.</span><span class="n">key</span><span class="p">)</span>
+                <span class="n">issue_type</span><span class="p">,</span> <span class="n">issue_effect</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_link_type_and_effect</span><span class="p">(</span><span class="n">issue_link</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">inward</span><span class="p">)</span>
+
+            <span class="n">links</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">&#39;issue_id&#39;</span><span class="p">:</span> <span class="n">issue_id</span><span class="p">,</span> <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="n">issue_type</span><span class="p">,</span> <span class="s1">&#39;effect&#39;</span><span class="p">:</span> <span class="n">issue_effect</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">links</span></div>
+
+<div class="viewcode-block" id="JiraBackend._get_issue_link_type_and_effect"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._get_issue_link_type_and_effect">[docs]</a>    <span class="k">def</span> <span class="nf">_get_issue_link_type_and_effect</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg_string</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the correct issue link type and effect from a message</span>
+
+<span class="sd">        :param msg_string: String from which type and effect should be acquired</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="s2">&quot;Blocked&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Blocked&quot;</span><span class="p">,</span> <span class="s2">&quot;Blocked&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;is blocked by&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Blocker&quot;</span><span class="p">,</span> <span class="s2">&quot;is blocked by&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;blocks&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Blocker&quot;</span><span class="p">,</span> <span class="s2">&quot;blocks&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;is cloned by&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Cloners&quot;</span><span class="p">,</span> <span class="s2">&quot;is cloned by&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;is a clone of&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span> <span class="ow">or</span> <span class="s2">&quot;is cloned as&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Cloners&quot;</span><span class="p">,</span> <span class="s2">&quot;is cloned by&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;Is contained by&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span> <span class="ow">or</span> <span class="s2">&quot;is contained by&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Container&quot;</span><span class="p">,</span> <span class="s2">&quot;is contained by&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;contains&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Container&quot;</span><span class="p">,</span> <span class="s2">&quot;contains&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;Dependent&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Dependent&quot;</span><span class="p">,</span> <span class="s2">&quot;Dependent&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;is duplicated by&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Duplicate&quot;</span><span class="p">,</span> <span class="s2">&quot;is duplicated by&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;duplicates&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Duplicate&quot;</span><span class="p">,</span> <span class="s2">&quot;duplicates&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;is part of&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Incorporates&quot;</span><span class="p">,</span> <span class="s2">&quot;is part of&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;incorporates&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Incorporates&quot;</span><span class="p">,</span> <span class="s2">&quot;incorporates&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;is related to&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Reference&quot;</span><span class="p">,</span> <span class="s2">&quot;is related to&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;relates&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Reference&quot;</span><span class="p">,</span> <span class="s2">&quot;relates to&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;is broken by&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Regression&quot;</span><span class="p">,</span> <span class="s2">&quot;is broken by&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;breaks&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Regression&quot;</span><span class="p">,</span> <span class="s2">&quot;breaks&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;is required by&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Required&quot;</span><span class="p">,</span> <span class="s2">&quot;is required by&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;requires&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Required&quot;</span><span class="p">,</span> <span class="s2">&quot;requires&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;is superceded by&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Supercedes&quot;</span><span class="p">,</span> <span class="s2">&quot;is superceded by&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;supercedes&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Supercedes&quot;</span><span class="p">,</span> <span class="s2">&quot;supercedes&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;is depended upon by&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Dependent&quot;</span><span class="p">,</span> <span class="s2">&quot;is depended upon by&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;depends upon&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Dependent&quot;</span><span class="p">,</span> <span class="s2">&quot;depends upon&quot;</span>
+        <span class="k">elif</span> <span class="s2">&quot;depends on&quot;</span> <span class="ow">in</span> <span class="n">msg_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Dependent&quot;</span><span class="p">,</span> <span class="s2">&quot;depends on&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not find issue type and effect of string </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">msg_string</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="JiraBackend._get_issue_id_by_system_id"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._get_issue_id_by_system_id">[docs]</a>    <span class="k">def</span> <span class="nf">_get_issue_id_by_system_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">system_id</span><span class="p">,</span> <span class="n">refresh_key</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the issue id like it is stored in the mongodb for a system id (like the id that was assigned by jira to</span>
+<span class="sd">        the issue)</span>
+
+
+<span class="sd">        :param system_id: id of the issue like it was assigned by jira</span>
+<span class="sd">        :param refresh_key: if set to true, jira is contacted to get the newest system id for this issue</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">refresh_key</span><span class="p">:</span>
+            <span class="n">system_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_newest_key_for_issue</span><span class="p">(</span><span class="n">system_id</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">issue_id</span> <span class="o">=</span> <span class="n">Issue</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">,</span> <span class="n">external_id</span><span class="o">=</span><span class="n">system_id</span><span class="p">)</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">id</span>
+        <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="n">issue_id</span> <span class="o">=</span> <span class="n">Issue</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">,</span> <span class="n">external_id</span><span class="o">=</span><span class="n">system_id</span><span class="p">)</span><span class="o">.</span><span class="n">save</span><span class="p">()</span><span class="o">.</span><span class="n">id</span>
+
+        <span class="k">return</span> <span class="n">issue_id</span></div>
+
+<div class="viewcode-block" id="JiraBackend._get_newest_key_for_issue"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._get_newest_key_for_issue">[docs]</a>    <span class="k">def</span> <span class="nf">_get_newest_key_for_issue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">old_key</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the newes key for an issue. We query the saved issue and access it via our jira connection.</span>
+<span class="sd">        The jira connection will give us back the NEW value (e.g., if we access via the key ZOOKEEPER-659,</span>
+<span class="sd">        we will get back BOOKKEEPER-691 which is the new value</span>
+<span class="sd">        :param old_key: old issue key</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">issue</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jira_client</span><span class="o">.</span><span class="n">issue</span><span class="p">(</span><span class="n">old_key</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="s1">&#39;summary&#39;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">old_key</span> <span class="o">!=</span> <span class="n">issue</span><span class="o">.</span><span class="n">key</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Got new issue: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">issue</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">issue</span><span class="o">.</span><span class="n">key</span>
+        <span class="k">except</span> <span class="n">JIRAError</span><span class="p">:</span>
+            <span class="c1"># Can happen as issue may be deleted</span>
+            <span class="k">return</span> <span class="n">old_key</span></div>
+
+    <span class="k">def</span> <span class="nf">_store_events</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_issue</span><span class="p">,</span> <span class="n">mongo_issue_id</span><span class="p">):</span>
+        <span class="c1"># Go through history of jira issue</span>
+        <span class="c1"># We go thorugh from newest to oldest</span>
+        <span class="c1"># If we find an issue that is already stored -&gt; return</span>
+
+        <span class="k">for</span> <span class="n">history</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">jira_issue</span><span class="o">.</span><span class="n">changelog</span><span class="o">.</span><span class="n">histories</span><span class="p">):</span>
+            <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="n">created_at</span> <span class="o">=</span> <span class="n">dateutil</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">history</span><span class="o">.</span><span class="n">created</span><span class="p">)</span>
+
+            <span class="c1"># It can happen that an event does not have an author (e.g., ZOOKEEPER-2218)</span>
+            <span class="n">author_id</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">history</span><span class="p">,</span> <span class="s1">&#39;author&#39;</span><span class="p">):</span>
+                <span class="n">author_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">history</span><span class="o">.</span><span class="n">author</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">history</span><span class="o">.</span><span class="n">author</span><span class="o">.</span><span class="n">displayName</span><span class="p">,</span>
+                                             <span class="n">email</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_user_email</span><span class="p">(</span><span class="n">history</span><span class="o">.</span><span class="n">author</span><span class="p">))</span>
+
+            <span class="k">for</span> <span class="n">jira_event</span> <span class="ow">in</span> <span class="n">history</span><span class="o">.</span><span class="n">items</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Processing changelog entry: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="nb">vars</span><span class="p">(</span><span class="n">jira_event</span><span class="p">))</span>
+
+                <span class="n">unique_event_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">history</span><span class="o">.</span><span class="n">id</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="si">%%</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+                <span class="n">already_stored</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_store_event</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="n">unique_event_id</span><span class="p">,</span> <span class="n">author_id</span><span class="p">,</span> <span class="n">created_at</span><span class="p">,</span> <span class="n">mongo_issue_id</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">already_stored</span><span class="p">:</span>
+                    <span class="k">return</span>
+
+                <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+
+<div class="viewcode-block" id="JiraBackend._store_event"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._store_event">[docs]</a>    <span class="k">def</span> <span class="nf">_store_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jira_event</span><span class="p">,</span> <span class="n">unique_event_id</span><span class="p">,</span> <span class="n">author_id</span><span class="p">,</span> <span class="n">created_at</span><span class="p">,</span> <span class="n">mongo_issue_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Stores the given jira event</span>
+
+<span class="sd">        :param jira_event: jira event</span>
+<span class="sd">        :param unique_event_id: unique identifier of this event</span>
+<span class="sd">        :param author_id: author that authored this event</span>
+<span class="sd">        :param created_at: creation date</span>
+<span class="sd">        :param mongo_issue_id: issue to which this event is connected</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">terminology_mapping</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;Component&#39;</span><span class="p">:</span> <span class="s1">&#39;components&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;Link&#39;</span><span class="p">:</span> <span class="s1">&#39;issuelinks&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;Fix Version&#39;</span><span class="p">:</span> <span class="s1">&#39;fixVersions&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;Version&#39;</span><span class="p">:</span> <span class="s1">&#39;versions&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;Labels&#39;</span><span class="p">:</span> <span class="s1">&#39;labels&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;Parent&#39;</span><span class="p">:</span> <span class="s1">&#39;parent&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="c1"># If the try block succeeds, the event already exist in the database</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">Event</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">external_id</span><span class="o">=</span><span class="n">unique_event_id</span><span class="p">,</span> <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue_id</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="n">mongo_event</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span>
+                <span class="n">external_id</span><span class="o">=</span><span class="n">unique_event_id</span><span class="p">,</span>
+                <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue_id</span><span class="p">,</span>
+                <span class="n">created_at</span><span class="o">=</span><span class="n">created_at</span><span class="p">,</span>
+                <span class="n">author_id</span><span class="o">=</span><span class="n">author_id</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># We need to map the terminology from the histories in jira to the terminology that</span>
+        <span class="c1"># is used when querying an issue</span>
+        <span class="c1"># E.g., in the changelog &quot;labels&quot; is called &quot;Labels&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">jira_at_name</span> <span class="o">=</span> <span class="n">terminology_mapping</span><span class="p">[</span><span class="nb">getattr</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="s1">&#39;field&#39;</span><span class="p">)]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">jira_at_name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="s1">&#39;field&#39;</span><span class="p">)</span>
+
+        <span class="c1"># Map jira terminology to our terminology</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">mongo_event</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jira_mongo_terminology_mapping</span><span class="p">[</span><span class="n">jira_at_name</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;Mapping for attribute </span><span class="si">%s</span><span class="s1"> not found.&#39;</span> <span class="o">%</span> <span class="n">jira_at_name</span><span class="p">)</span>
+            <span class="n">mongo_event</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">jira_at_name</span>
+
+        <span class="k">if</span> <span class="n">mongo_event</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="s1">&#39;assignee_id&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="s1">&#39;from&#39;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">people_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="s1">&#39;from&#39;</span><span class="p">))</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="n">people_id</span>
+            <span class="k">if</span> <span class="n">jira_event</span><span class="o">.</span><span class="n">to</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">people_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">jira_event</span><span class="o">.</span><span class="n">to</span><span class="p">)</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="n">people_id</span>
+        <span class="k">elif</span> <span class="n">mongo_event</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="s1">&#39;parent_issue_id&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="s1">&#39;from&#39;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">issue_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">jira_event</span><span class="o">.</span><span class="n">fromString</span><span class="p">)</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="n">issue_id</span>
+            <span class="k">if</span> <span class="n">jira_event</span><span class="o">.</span><span class="n">to</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">issue_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">jira_event</span><span class="o">.</span><span class="n">toString</span><span class="p">)</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="n">issue_id</span>
+        <span class="k">elif</span> <span class="n">mongo_event</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="s1">&#39;issue_links&#39;</span><span class="p">:</span>
+
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="s1">&#39;from&#39;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">issue_type</span><span class="p">,</span> <span class="n">issue_effect</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_link_type_and_effect</span><span class="p">(</span><span class="n">jira_event</span><span class="o">.</span><span class="n">fromString</span><span class="p">)</span>
+                <span class="n">issue_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="s1">&#39;from&#39;</span><span class="p">))</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;issue_id&#39;</span><span class="p">:</span> <span class="n">issue_id</span><span class="p">,</span> <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="n">issue_type</span><span class="p">,</span> <span class="s1">&#39;effect&#39;</span><span class="p">:</span> <span class="n">issue_effect</span><span class="p">}</span>
+            <span class="k">if</span> <span class="n">jira_event</span><span class="o">.</span><span class="n">to</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">issue_type</span><span class="p">,</span> <span class="n">issue_effect</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_link_type_and_effect</span><span class="p">(</span><span class="n">jira_event</span><span class="o">.</span><span class="n">toString</span><span class="p">)</span>
+                <span class="n">issue_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">jira_event</span><span class="o">.</span><span class="n">to</span><span class="p">)</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;issue_id&#39;</span><span class="p">:</span> <span class="n">issue_id</span><span class="p">,</span> <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="n">issue_type</span><span class="p">,</span> <span class="s1">&#39;effect&#39;</span><span class="p">:</span> <span class="n">issue_effect</span><span class="p">}</span>
+        <span class="k">elif</span> <span class="n">mongo_event</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="s1">&#39;original_time_estimate&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="s1">&#39;from&#39;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">jira_event</span><span class="o">.</span><span class="n">fromString</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">jira_event</span><span class="o">.</span><span class="n">to</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">jira_event</span><span class="o">.</span><span class="n">toString</span><span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">mongo_event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="s1">&#39;toString&#39;</span><span class="p">)</span>
+            <span class="n">mongo_event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">jira_event</span><span class="p">,</span> <span class="s1">&#39;fromString&#39;</span><span class="p">)</span>
+
+        <span class="n">mongo_event</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+
+<div class="viewcode-block" id="JiraBackend._get_people"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._get_people">[docs]</a>    <span class="k">def</span> <span class="nf">_get_people</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">username</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the document from the people collection. First checks the people dictionary to save API requests</span>
+
+<span class="sd">        :param username: username of the person</span>
+<span class="sd">        :param email: email of the person</span>
+<span class="sd">        :param name: name of the person</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Check if user was accessed before. This reduces the amount of API requests</span>
+        <span class="k">if</span> <span class="n">username</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">people</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">people</span><span class="p">[</span><span class="n">username</span><span class="p">]</span>
+
+        <span class="c1"># If email and name are not set, make a request to get the user</span>
+        <span class="k">if</span> <span class="n">email</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">user</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_user</span><span class="p">(</span><span class="n">username</span><span class="p">)</span>
+
+            <span class="c1"># It can happen that a user is no longer available</span>
+            <span class="k">if</span> <span class="n">user</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">email</span> <span class="o">=</span> <span class="n">username</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="n">username</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">email</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_user_email</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">displayName</span>
+
+        <span class="c1"># Replace the email address &quot;anonymization&quot;</span>
+        <span class="n">email</span> <span class="o">=</span> <span class="n">email</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39; at &#39;</span><span class="p">,</span> <span class="s1">&#39;@&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39; dot &#39;</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
+        <span class="n">people_id</span> <span class="o">=</span> <span class="n">People</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="n">email</span><span class="p">)</span><span class="o">.</span><span class="n">upsert_one</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="n">email</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="n">username</span><span class="p">)</span><span class="o">.</span><span class="n">id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">people</span><span class="p">[</span><span class="n">username</span><span class="p">]</span> <span class="o">=</span> <span class="n">people_id</span>
+        <span class="k">return</span> <span class="n">people_id</span></div>
+
+<div class="viewcode-block" id="JiraBackend._get_user"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._get_user">[docs]</a>    <span class="k">def</span> <span class="nf">_get_user</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">username</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the user via the jira client</span>
+
+<span class="sd">        :param username: username of the jira user</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get user via the jira client</span>
+        <span class="k">if</span> <span class="n">username</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="c1"># It can happen that a user is no longer available</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">jira_client</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;user?username=</span><span class="si">{0}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">username</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">JIRAError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="JiraBackend._get_user_email"><a class="viewcode-back" href="../../../api.html#issueshark.backends.jirabackend.JiraBackend._get_user_email">[docs]</a>    <span class="k">def</span> <span class="nf">_get_user_email</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return user email address.</span>
+
+<span class="sd">        Check for existence of emailAddress attribute, it can be hidden in Jira.</span>
+<span class="sd">        If it exists return it if not return &#39;null&#39; (because that is the current convention in the MongoDB).</span>
+
+<span class="sd">        :param user: jira user object</span>
+<span class="sd">        :returns: str -- users email or &#39;null&#39;</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">email</span> <span class="o">=</span> <span class="s1">&#39;null&#39;</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">user</span><span class="p">,</span> <span class="s1">&#39;emailAddress&#39;</span><span class="p">):</span>
+            <span class="n">email</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">emailAddress</span>
+        <span class="k">return</span> <span class="n">email</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2017, Fabian Trautsch
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

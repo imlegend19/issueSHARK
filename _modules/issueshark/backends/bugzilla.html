@@ -1,0 +1,713 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>issueshark.backends.bugzilla &mdash; issueSHARK 2.0.4 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../../../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../../../_static/jquery.js"></script>
+        <script type="text/javascript" src="../../../_static/underscore.js"></script>
+        <script type="text/javascript" src="../../../_static/doctools.js"></script>
+        <script type="text/javascript" src="../../../_static/language_data.js"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> issueSHARK
+          
+
+          
+            
+            <img src="../../../_static/SmartSHARK_read_the_docs_logo.png" class="logo" alt="Logo"/>
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../intro.html">1. Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../extension.html">2. How to Extend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">3. API Documentation</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">issueSHARK</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>issueshark.backends.bugzilla</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for issueshark.backends.bugzilla</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">sys</span>
+
+<span class="kn">import</span> <span class="nn">dateutil.parser</span>
+<span class="kn">from</span> <span class="nn">mongoengine</span> <span class="kn">import</span> <span class="n">DoesNotExist</span>
+<span class="kn">import</span> <span class="nn">copy</span>
+
+<span class="kn">from</span> <span class="nn">issueshark.backends.basebackend</span> <span class="kn">import</span> <span class="n">BaseBackend</span>
+<span class="kn">from</span> <span class="nn">issueshark.backends.helpers.bugzillaagent</span> <span class="kn">import</span> <span class="n">BugzillaAgent</span>
+<span class="kn">from</span> <span class="nn">validate_email</span> <span class="kn">import</span> <span class="n">validate_email</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">pycoshark.mongomodels</span> <span class="kn">import</span> <span class="n">Issue</span><span class="p">,</span> <span class="n">People</span><span class="p">,</span> <span class="n">Event</span><span class="p">,</span> <span class="n">IssueComment</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s1">&#39;backend&#39;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="BugzillaBackend"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend">[docs]</a><span class="k">class</span> <span class="nc">BugzillaBackend</span><span class="p">(</span><span class="n">BaseBackend</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Backend that collects data from a Bugzilla REST API</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">identifier</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Identifier (bugzilla)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="s1">&#39;bugzilla&#39;</span>
+
+<div class="viewcode-block" id="BugzillaBackend.__init__"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfg</span><span class="p">,</span> <span class="n">issue_system_id</span><span class="p">,</span> <span class="n">project_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialization</span>
+<span class="sd">        Initializes the people dictionary see: :func:`~issueshark.backends.bugzilla.BugzillaBackend._get_people`</span>
+<span class="sd">        Initializes the attribute mapping: Maps attributes from the bugzilla API to our database design</span>
+
+
+<span class="sd">        :param cfg: holds als configuration. Object of class :class:`~issueshark.config.Config`</span>
+<span class="sd">        :param issue_system_id: id of the issue system for which data should be collected. :class:`bson.objectid.ObjectId`</span>
+<span class="sd">        :param project_id: id of the project to which the issue system belongs. :class:`bson.objectid.ObjectId`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">issue_system_id</span><span class="p">,</span> <span class="n">project_id</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">debug_level</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bugzilla_agent</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">people</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">at_mapping</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;assigned_to_detail&#39;</span><span class="p">:</span> <span class="s1">&#39;assignee_id&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;blocks&#39;</span><span class="p">:</span> <span class="s1">&#39;issue_links&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;component&#39;</span><span class="p">:</span> <span class="s1">&#39;components&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;creation_time&#39;</span><span class="p">:</span> <span class="s1">&#39;created_at&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;creator_detail&#39;</span><span class="p">:</span> <span class="s1">&#39;creator_id&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;depends_on&#39;</span><span class="p">:</span> <span class="s1">&#39;issue_links&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;dupe_of&#39;</span><span class="p">:</span> <span class="s1">&#39;issue_links&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;keywords&#39;</span><span class="p">:</span> <span class="s1">&#39;labels&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;last_change_time&#39;</span><span class="p">:</span> <span class="s1">&#39;updated_at&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;op_sys&#39;</span><span class="p">:</span> <span class="s1">&#39;environment&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;platform&#39;</span><span class="p">:</span> <span class="s1">&#39;platform&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;resolution&#39;</span><span class="p">:</span> <span class="s1">&#39;resolution&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;severity&#39;</span><span class="p">:</span> <span class="s1">&#39;priority&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;status&#39;</span><span class="p">:</span> <span class="s1">&#39;status&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;summary&#39;</span><span class="p">:</span> <span class="s1">&#39;title&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;target_milestone&#39;</span><span class="p">:</span> <span class="s1">&#39;fix_versions&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;version&#39;</span><span class="p">:</span> <span class="s1">&#39;affects_versions&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;issue_type&#39;</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend.process"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets all the issues and their updates</span>
+
+<span class="sd">        1. Gets the last stored issues updated_at field</span>
+
+<span class="sd">        2. Gets all issues that was last change since this value</span>
+
+<span class="sd">        3. Processes the results in 50-steps</span>
+
+<span class="sd">        4. For each issue calls: :func:`issueshark.backends.bugzilla.BugzillaBackend._process_issue`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bugzilla_agent</span> <span class="o">=</span> <span class="n">BugzillaAgent</span><span class="p">(</span><span class="n">logger</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+        <span class="c1"># Get last modification date (since then, we will collect bugs)</span>
+        <span class="n">last_issue</span> <span class="o">=</span> <span class="n">Issue</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s1">&#39;-updated_at&#39;</span><span class="p">)</span>\
+            <span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s1">&#39;updated_at&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+        <span class="n">starting_date</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">last_issue</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+           <span class="n">starting_date</span> <span class="o">=</span> <span class="n">last_issue</span><span class="o">.</span><span class="n">updated_at</span>
+
+        <span class="c1"># Get all issues</span>
+        <span class="n">issues</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bugzilla_agent</span><span class="o">.</span><span class="n">get_bug_list</span><span class="p">(</span><span class="n">last_change_time</span><span class="o">=</span><span class="n">starting_date</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
+
+        <span class="c1"># If no new bugs found, return</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">issues</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;No new issues found. Exiting...&#39;</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Otherwise, go through all issues</span>
+        <span class="n">processed_results</span> <span class="o">=</span> <span class="mi">50</span>
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">issues</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Processing </span><span class="si">%d</span><span class="s2"> issues...&quot;</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">issues</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">issue</span> <span class="ow">in</span> <span class="n">issues</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Processing issue </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">issue</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">])</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_process_issue</span><span class="p">(</span><span class="n">issue</span><span class="p">)</span>
+
+            <span class="c1"># Go through the next issues</span>
+            <span class="n">issues</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bugzilla_agent</span><span class="o">.</span><span class="n">get_bug_list</span><span class="p">(</span><span class="n">last_change_time</span><span class="o">=</span><span class="n">starting_date</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">processed_results</span><span class="p">)</span>
+            <span class="n">processed_results</span> <span class="o">+=</span> <span class="mi">50</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._process_issue"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._process_issue">[docs]</a>    <span class="k">def</span> <span class="nf">_process_issue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">issue</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Processes the issue in several steps:</span>
+
+<span class="sd">        1. Get all comments. See: :func:`issueshark.backends.helpers.bugzillaagent.BugzillaAgent.get_comments`</span>
+
+<span class="sd">        2. Get the whole issue history.\</span>
+<span class="sd">        See: :func:`issueshark.backends.helpers.bugzillaagent.BugzillaAgent.get_issue_history`</span>
+
+<span class="sd">        3. Transforms the issue to our issue model. \</span>
+<span class="sd">        See: :func:`issueshark.backends.bugzilla.BugzillaBackend._transform_issue`</span>
+
+<span class="sd">        4. Go through the history of the issue (newest to oldes) and store the events. \</span>
+<span class="sd">        See: :func:`issueshark.backends.bugzilla.BugzillaBackend._process_event`</span>
+
+<span class="sd">        5. Process all comments. See: :func:`issueshark.backends.bugzilla.BugzillaBackend._process_comments`</span>
+
+<span class="sd">        :param issue: issue that was got from the bugzilla REST API</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Transform issue</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bugzilla_agent</span><span class="o">.</span><span class="n">get_comments</span><span class="p">(</span><span class="n">issue</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">])</span>
+        <span class="n">histories</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bugzilla_agent</span><span class="o">.</span><span class="n">get_issue_history</span><span class="p">(</span><span class="n">issue</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">])</span>
+        <span class="n">mongo_issue</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_transform_issue</span><span class="p">(</span><span class="n">issue</span><span class="p">,</span> <span class="n">comments</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Transformed issue: </span><span class="si">%s</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store_events</span><span class="p">(</span><span class="n">histories</span><span class="p">,</span> <span class="n">issue</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="p">)</span>
+
+        <span class="c1"># Store comments</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_process_comments</span><span class="p">(</span><span class="n">mongo_issue</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">comments</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_store_events</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">histories</span><span class="p">,</span> <span class="n">issue</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="p">):</span>
+        <span class="c1"># Store events</span>
+        <span class="n">j</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">events_to_insert</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">history</span> <span class="ow">in</span> <span class="n">histories</span><span class="p">:</span>
+            <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="n">change_date</span> <span class="o">=</span> <span class="n">dateutil</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">history</span><span class="p">[</span><span class="s1">&#39;when&#39;</span><span class="p">])</span>
+            <span class="n">author_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">history</span><span class="p">[</span><span class="s1">&#39;who&#39;</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">bz_event</span> <span class="ow">in</span> <span class="n">history</span><span class="p">[</span><span class="s1">&#39;changes&#39;</span><span class="p">]:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Processing event: </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">bz_event</span><span class="p">)</span>
+                <span class="n">unique_event_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">issue</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">])</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="si">%%</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="si">%%</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span>
+                <span class="n">mongo_event</span><span class="p">,</span> <span class="n">is_new_event</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_event</span><span class="p">(</span><span class="n">unique_event_id</span><span class="p">,</span> <span class="n">bz_event</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="p">,</span> <span class="n">change_date</span><span class="p">,</span>
+                                                                <span class="n">author_id</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Newly created?: </span><span class="si">%s</span><span class="s1">, Resulting event: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">is_new_event</span><span class="p">,</span> <span class="n">mongo_event</span><span class="p">))</span>
+
+                <span class="c1"># Append to list if event is not stored in db</span>
+                <span class="k">if</span> <span class="n">is_new_event</span><span class="p">:</span>
+                    <span class="n">events_to_insert</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mongo_event</span><span class="p">)</span>
+
+                <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">j</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># Store events</span>
+        <span class="k">if</span> <span class="n">events_to_insert</span><span class="p">:</span>
+            <span class="n">Event</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">events_to_insert</span><span class="p">,</span> <span class="n">load_bulk</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="BugzillaBackend._process_comments"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._process_comments">[docs]</a>    <span class="k">def</span> <span class="nf">_process_comments</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mongo_issue_id</span><span class="p">,</span> <span class="n">comments</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Processes the comments for an issue</span>
+
+<span class="sd">        :param mongo_issue_id: Object of class :class:`bson.objectid.ObjectId`. Identifier of the document that holds \</span>
+<span class="sd">        the issue information</span>
+<span class="sd">        :param comments: comments that were received from the bugzilla API</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Go through all comments of the issue</span>
+        <span class="n">comments_to_insert</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Processing </span><span class="si">%d</span><span class="s1"> comments...&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">comments</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="k">for</span> <span class="n">comment</span> <span class="ow">in</span> <span class="n">comments</span><span class="p">:</span>
+            <span class="c1"># Comment with count 0 is the description of the bug</span>
+            <span class="k">if</span> <span class="n">comment</span><span class="p">[</span><span class="s1">&#39;count&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Processing comment: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">comment</span><span class="p">)</span>
+            <span class="n">unique_comment_id</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%s%%%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">mongo_issue_id</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">IssueComment</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">external_id</span><span class="o">=</span><span class="n">unique_comment_id</span><span class="p">,</span> <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue_id</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+                <span class="k">continue</span>
+            <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+                <span class="n">mongo_comment</span> <span class="o">=</span> <span class="n">IssueComment</span><span class="p">(</span>
+                    <span class="n">external_id</span><span class="o">=</span><span class="n">unique_comment_id</span><span class="p">,</span>
+                    <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue_id</span><span class="p">,</span>
+                    <span class="n">created_at</span><span class="o">=</span><span class="n">dateutil</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">comment</span><span class="p">[</span><span class="s1">&#39;creation_time&#39;</span><span class="p">]),</span>
+                    <span class="n">author_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">comment</span><span class="p">[</span><span class="s1">&#39;creator&#39;</span><span class="p">]),</span>
+                    <span class="n">comment</span><span class="o">=</span><span class="n">comment</span><span class="p">[</span><span class="s1">&#39;text&#39;</span><span class="p">],</span>
+                <span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Resulting comment: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">mongo_comment</span><span class="p">)</span>
+                <span class="n">comments_to_insert</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mongo_comment</span><span class="p">)</span>
+
+        <span class="c1"># If comments need to be inserted -&gt; bulk insert</span>
+        <span class="k">if</span> <span class="n">comments_to_insert</span><span class="p">:</span>
+            <span class="n">IssueComment</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">comments_to_insert</span><span class="p">,</span> <span class="n">load_bulk</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._process_event"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._process_event">[docs]</a>    <span class="k">def</span> <span class="nf">_process_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">unique_event_id</span><span class="p">,</span> <span class="n">bz_event</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="p">,</span> <span class="n">change_date</span><span class="p">,</span> <span class="n">author_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Processes the event. During the event processing the Issue is set back to its original state</span>
+<span class="sd">        before the event occured.</span>
+
+<span class="sd">        :param unique_event_id: unique identifier of the event</span>
+<span class="sd">        :param bz_event: event that was received from the bugzilla API</span>
+<span class="sd">        :param mongo_issue: issue that is/should be stored in the mongodb</span>
+<span class="sd">        :param change_date: date when the event was created</span>
+<span class="sd">        :param author_id: :class:`bson.objectid.ObjectId` of the author of the event</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">mongo_event</span> <span class="o">=</span> <span class="n">Event</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">external_id</span><span class="o">=</span><span class="n">unique_event_id</span><span class="p">,</span> <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">mongo_event</span><span class="p">,</span> <span class="kc">False</span>
+        <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="n">mongo_event</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span>
+                <span class="n">external_id</span><span class="o">=</span><span class="n">unique_event_id</span><span class="p">,</span>
+                <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                <span class="n">created_at</span><span class="o">=</span><span class="n">change_date</span><span class="p">,</span>
+                <span class="n">author_id</span><span class="o">=</span><span class="n">author_id</span>
+            <span class="p">)</span>
+
+        <span class="c1"># We need to map back the status from the bz terminology to ours. Special: The assigned_to must be mapped to</span>
+        <span class="c1"># assigned_to_detail beforehand, as we are using this for the issue parsing</span>
+        <span class="k">if</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;field_name&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;assigned_to&#39;</span><span class="p">:</span>
+            <span class="n">bz_at_name</span> <span class="o">=</span> <span class="s1">&#39;assigned_to_detail&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">bz_at_name</span> <span class="o">=</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;field_name&#39;</span><span class="p">]</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">mongo_event</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">at_mapping</span><span class="p">[</span><span class="n">bz_at_name</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;Mapping for attribute </span><span class="si">%s</span><span class="s1"> not found.&#39;</span> <span class="o">%</span> <span class="n">bz_at_name</span><span class="p">)</span>
+            <span class="n">mongo_event</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">bz_at_name</span>
+
+        <span class="k">if</span> <span class="n">mongo_event</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="s1">&#39;assignee_id&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">]:</span>
+                <span class="n">people_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">])</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="n">people_id</span>
+
+            <span class="k">if</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">]:</span>
+                <span class="n">people_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">])</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="n">people_id</span>
+        <span class="k">elif</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;field_name&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;depends_on&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">]:</span>
+                <span class="n">issue_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">])</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;issue_id&#39;</span><span class="p">:</span> <span class="n">issue_id</span><span class="p">,</span> <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;Dependent&#39;</span><span class="p">,</span> <span class="s1">&#39;effect&#39;</span><span class="p">:</span> <span class="s1">&#39;depends on&#39;</span><span class="p">}</span>
+
+            <span class="k">if</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">]:</span>
+                <span class="n">issue_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">])</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;issue_id&#39;</span><span class="p">:</span> <span class="n">issue_id</span><span class="p">,</span> <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;Dependent&#39;</span><span class="p">,</span> <span class="s1">&#39;effect&#39;</span><span class="p">:</span> <span class="s1">&#39;depends on&#39;</span><span class="p">}</span>
+        <span class="k">elif</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;field_name&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;blocks&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">]:</span>
+                <span class="n">issue_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">])</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;issue_id&#39;</span><span class="p">:</span> <span class="n">issue_id</span><span class="p">,</span> <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;Blocker&#39;</span><span class="p">,</span> <span class="s1">&#39;effect&#39;</span><span class="p">:</span> <span class="s1">&#39;blocks&#39;</span><span class="p">}</span>
+
+            <span class="k">if</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">]:</span>
+                <span class="n">issue_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">])</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;issue_id&#39;</span><span class="p">:</span> <span class="n">issue_id</span><span class="p">,</span> <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;Blocker&#39;</span><span class="p">,</span> <span class="s1">&#39;effect&#39;</span><span class="p">:</span> <span class="s1">&#39;blocks&#39;</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">]:</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;added&#39;</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">]:</span>
+                <span class="n">mongo_event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="n">bz_event</span><span class="p">[</span><span class="s1">&#39;removed&#39;</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">mongo_event</span><span class="p">,</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._parse_bz_field"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._parse_bz_field">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_bz_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bz_issue</span><span class="p">,</span> <span class="n">at_name_bz</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses fields from the bugzilla issue</span>
+
+<span class="sd">        :param bz_issue: bugzilla issue (returned by the API)</span>
+<span class="sd">        :param at_name_bz: attribute name that should be parsed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">field_mapping</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;assigned_to_detail&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_author_details</span><span class="p">,</span>
+            <span class="s1">&#39;blocks&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_issue_links</span><span class="p">,</span>
+            <span class="s1">&#39;component&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;creation_time&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_date_field</span><span class="p">,</span>
+            <span class="s1">&#39;creator_detail&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_author_details</span><span class="p">,</span>
+            <span class="s1">&#39;depends_on&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_issue_links</span><span class="p">,</span>
+            <span class="s1">&#39;dupe_of&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_issue_links</span><span class="p">,</span>
+            <span class="s1">&#39;keywords&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_array_field</span><span class="p">,</span>
+            <span class="s1">&#39;last_change_time&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_date_field</span><span class="p">,</span>
+            <span class="s1">&#39;op_sys&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;platform&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;resolution&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;severity&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;status&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;summary&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;target_milestone&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;version&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_string_field</span><span class="p">,</span>
+            <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_type_field</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">correct_function</span> <span class="o">=</span> <span class="n">field_mapping</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">at_name_bz</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">correct_function</span><span class="p">(</span><span class="n">bz_issue</span><span class="p">,</span> <span class="n">at_name_bz</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._parse_author_details"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._parse_author_details">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_author_details</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bz_issue</span><span class="p">,</span> <span class="n">at_name_bz</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses author details from the bugzilla issue</span>
+
+<span class="sd">        :param bz_issue: bugzilla issue (returned by the API)</span>
+<span class="sd">        :param at_name_bz: attribute name that should be parsed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="s1">&#39;email&#39;</span> <span class="ow">in</span> <span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">],</span> <span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">][</span><span class="s1">&#39;email&#39;</span><span class="p">],</span>
+                                    <span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">][</span><span class="s1">&#39;real_name&#39;</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">])</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._parse_string_field"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._parse_string_field">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_string_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bz_issue</span><span class="p">,</span> <span class="n">at_name_bz</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses string fields from the bugzilla issue</span>
+
+<span class="sd">        :param bz_issue: bugzilla issue (returned by the API)</span>
+<span class="sd">        :param at_name_bz: attribute name that should be parsed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._parse_type_field"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._parse_type_field">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_type_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bz_issue</span><span class="p">,</span> <span class="n">at_name_bz</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses type fields, provides fallback if type field is not available</span>
+
+<span class="sd">        :param bz_issue: bugzilla issue (returned by the API)</span>
+<span class="sd">        :param at_name_bz: attribute name that should be parsed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Bugzilla does not have a separate field for the type. Therefore, we distinguish between bug an enhancement</span>
+        <span class="c1"># based on the severity information</span>
+        <span class="k">if</span> <span class="n">bz_issue</span><span class="p">[</span><span class="s1">&#39;severity&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;enhancement&#39;</span><span class="p">:</span>
+            <span class="n">ret</span> <span class="o">=</span> <span class="s1">&#39;Enhancement&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ret</span> <span class="o">=</span> <span class="s1">&#39;Bug&#39;</span>
+
+        <span class="c1"># in some versions of bugzilla a type is provided, we just try to make consistent</span>
+        <span class="k">if</span> <span class="s1">&#39;type&#39;</span> <span class="ow">in</span> <span class="n">bz_issue</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">bz_issue</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;defect&#39;</span><span class="p">:</span>
+                <span class="n">ret</span> <span class="o">=</span> <span class="s1">&#39;Bug&#39;</span>
+            <span class="k">elif</span> <span class="n">bz_issue</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;enhancement&#39;</span><span class="p">:</span>
+                <span class="n">ret</span> <span class="o">=</span> <span class="s1">&#39;Enhancement&#39;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">ret</span> <span class="o">=</span> <span class="n">bz_issue</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">ret</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._parse_array_field"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._parse_array_field">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_array_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bz_issue</span><span class="p">,</span> <span class="n">at_name_bz</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses array fields from the bugzilla issue</span>
+
+<span class="sd">        :param bz_issue: bugzilla issue (returned by the API)</span>
+<span class="sd">        :param at_name_bz: attribute name that should be parsed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._parse_issue_links"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._parse_issue_links">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_issue_links</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bz_issue</span><span class="p">,</span> <span class="n">at_name_bz</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses the issue links from the bugzilla issue</span>
+
+<span class="sd">        :param bz_issue: bugzilla issue (returned by the API)</span>
+<span class="sd">        :param at_name_bz: attribute name that should be parsed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">type_mapping</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;blocks&#39;</span><span class="p">:</span> <span class="s1">&#39;Blocker&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;dupe_of&#39;</span><span class="p">:</span> <span class="s1">&#39;Duplicate&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;depends_on&#39;</span><span class="p">:</span> <span class="s1">&#39;Dependent&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">effect_mapping</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;blocks&#39;</span><span class="p">:</span> <span class="s1">&#39;blocks&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;dupe_of&#39;</span><span class="p">:</span> <span class="s1">&#39;duplicates&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;depends_on&#39;</span><span class="p">:</span> <span class="s1">&#39;depends on&#39;</span>
+        <span class="p">}</span>
+
+        <span class="n">issue_links</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">],</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">]:</span>
+                <span class="n">issue_links</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="s1">&#39;issue_id&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">link</span><span class="p">),</span>
+                    <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="n">type_mapping</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">],</span>
+                    <span class="s1">&#39;effect&#39;</span><span class="p">:</span> <span class="n">effect_mapping</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">]</span>
+                <span class="p">})</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">issue_links</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="s1">&#39;issue_id&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_issue_id_by_system_id</span><span class="p">(</span><span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">]),</span>
+                    <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="n">type_mapping</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">],</span>
+                    <span class="s1">&#39;effect&#39;</span><span class="p">:</span> <span class="n">effect_mapping</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">]</span>
+                <span class="p">})</span>
+
+        <span class="k">return</span> <span class="n">issue_links</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._parse_date_field"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._parse_date_field">[docs]</a>    <span class="k">def</span> <span class="nf">_parse_date_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bz_issue</span><span class="p">,</span> <span class="n">at_name_bz</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parses the date field from the bugzilla issue</span>
+
+<span class="sd">        :param bz_issue: bugzilla issue (returned by the API)</span>
+<span class="sd">        :param at_name_bz: attribute name that should be parsed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">dateutil</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">bz_issue</span><span class="p">[</span><span class="n">at_name_bz</span><span class="p">])</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._transform_issue"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._transform_issue">[docs]</a>    <span class="k">def</span> <span class="nf">_transform_issue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bz_issue</span><span class="p">,</span> <span class="n">bz_comments</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Transforms the issue from an bugzilla issue to our issue model</span>
+
+<span class="sd">        :param bz_issue: bugzilla issue (returned by the API)</span>
+<span class="sd">        :param bz_comments: comments to the bugzilla issue (as the first comment is the description of the issue)</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">mongo_issue</span> <span class="o">=</span> <span class="n">Issue</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">,</span> <span class="n">external_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">bz_issue</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="n">mongo_issue</span> <span class="o">=</span> <span class="n">Issue</span><span class="p">(</span>
+                <span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">,</span>
+                <span class="n">external_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">bz_issue</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">])</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Set fields that can be directly mapped</span>
+        <span class="k">for</span> <span class="n">at_name_bz</span><span class="p">,</span> <span class="n">at_name_mongo</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">at_mapping</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">mongo_issue</span><span class="p">,</span> <span class="n">at_name_mongo</span><span class="p">),</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="c1"># Get the result and the current value and merge it together</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_bz_field</span><span class="p">(</span><span class="n">bz_issue</span><span class="p">,</span> <span class="n">at_name_bz</span><span class="p">)</span>
+                <span class="n">current_value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">mongo_issue</span><span class="p">,</span> <span class="n">at_name_mongo</span><span class="p">,</span> <span class="nb">list</span><span class="p">())</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                    <span class="n">result</span> <span class="o">=</span> <span class="p">[</span><span class="n">result</span><span class="p">]</span>
+
+                <span class="c1"># Extend</span>
+                <span class="n">current_value</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">current_value</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">at_name_mongo</span> <span class="o">==</span> <span class="s1">&#39;issue_links&#39;</span><span class="p">:</span>
+                    <span class="n">current_value</span> <span class="o">=</span> <span class="nb">list</span><span class="p">({</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;issue_id&#39;</span><span class="p">]:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">current_value</span><span class="p">}</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">current_value</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">current_value</span><span class="p">))</span>
+
+                <span class="c1"># Set the attribute</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="n">mongo_issue</span><span class="p">,</span> <span class="n">at_name_mongo</span><span class="p">,</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">current_value</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="n">mongo_issue</span><span class="p">,</span> <span class="n">at_name_mongo</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_bz_field</span><span class="p">(</span><span class="n">bz_issue</span><span class="p">,</span> <span class="n">at_name_bz</span><span class="p">))</span>
+
+        <span class="c1"># The first comment is the description! Bugzilla does not have a separate description field. The comment</span>
+        <span class="c1"># with the count == 0 is the description</span>
+        <span class="k">for</span> <span class="n">comment</span> <span class="ow">in</span> <span class="n">bz_comments</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">comment</span><span class="p">[</span><span class="s1">&#39;count&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">mongo_issue</span><span class="o">.</span><span class="n">desc</span> <span class="o">=</span> <span class="n">comment</span><span class="p">[</span><span class="s1">&#39;text&#39;</span><span class="p">]</span>
+                <span class="k">break</span>
+
+        <span class="c1"># If we have a creator, its also the repoerter in bugzilla terminology</span>
+        <span class="k">if</span> <span class="n">bz_issue</span><span class="p">[</span><span class="s1">&#39;creator_detail&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">mongo_issue</span><span class="o">.</span><span class="n">reporter_id</span> <span class="o">=</span> <span class="n">mongo_issue</span><span class="o">.</span><span class="n">creator_id</span>
+
+        <span class="c1"># moved to its own function, can be deleted later</span>
+        <span class="c1"># Bugzilla does not have a separate field for the type. Therefore, we distinguish between bug an enhancement</span>
+        <span class="c1"># based on the severity information</span>
+        <span class="c1"># if bz_issue[&#39;severity&#39;] == &#39;enhancement&#39;:</span>
+        <span class="c1">#     mongo_issue.issue_type = &#39;Enhancement&#39;</span>
+        <span class="c1"># else:</span>
+        <span class="c1">#     mongo_issue.issue_type = &#39;Bug&#39;</span>
+
+        <span class="k">return</span> <span class="n">mongo_issue</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._get_mongo_attribute"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._get_mongo_attribute">[docs]</a>    <span class="k">def</span> <span class="nf">_get_mongo_attribute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Maps the attirbutes of the bugzilla api to the attributes of the document stored in the mongodb</span>
+
+<span class="sd">        :param field_name: field name that should be mapped</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">at_mapping</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._get_people"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._get_people">[docs]</a>    <span class="k">def</span> <span class="nf">_get_people</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">username</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets people from the people collection</span>
+
+<span class="sd">        :param username: username of the user</span>
+<span class="sd">        :param email: email of the user</span>
+<span class="sd">        :param name: name of the user</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Check if user was accessed before. This reduces the amount of API requests</span>
+        <span class="k">if</span> <span class="n">username</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">people</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">people</span><span class="p">[</span><span class="n">username</span><span class="p">]</span>
+
+        <span class="c1"># If email and name are not set, make a request to get the user</span>
+        <span class="k">if</span> <span class="n">email</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">user</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bugzilla_agent</span><span class="o">.</span><span class="n">get_user</span><span class="p">(</span><span class="n">username</span><span class="p">)</span>
+
+            <span class="c1"># If the user is not found, we must use the username name</span>
+            <span class="k">if</span> <span class="n">user</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">email</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="n">username</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">email</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;email&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="n">user</span><span class="p">[</span><span class="s1">&#39;real_name&#39;</span><span class="p">]</span>
+
+            <span class="c1"># Check if email is none, this can happen as an email address may be excluded from the return value</span>
+            <span class="k">if</span> <span class="n">email</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># Check if the username is a valid email address, if yes use this</span>
+                <span class="k">if</span> <span class="n">validate_email</span><span class="p">(</span><span class="n">username</span><span class="p">):</span>
+                    <span class="n">email</span> <span class="o">=</span> <span class="n">username</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">email</span> <span class="o">=</span> <span class="s2">&quot;nobody@nobody.com&quot;</span>
+
+        <span class="c1"># Replace the email address &quot;anonymization&quot;</span>
+        <span class="n">email</span> <span class="o">=</span> <span class="n">email</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39; at &#39;</span><span class="p">,</span> <span class="s1">&#39;@&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39; dot &#39;</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span>
+        <span class="n">people_id</span> <span class="o">=</span> <span class="n">People</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="n">email</span><span class="p">)</span><span class="o">.</span><span class="n">upsert_one</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="n">email</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="n">username</span><span class="p">)</span><span class="o">.</span><span class="n">id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">people</span><span class="p">[</span><span class="n">username</span><span class="p">]</span> <span class="o">=</span> <span class="n">people_id</span>
+        <span class="k">return</span> <span class="n">people_id</span></div>
+
+<div class="viewcode-block" id="BugzillaBackend._get_issue_id_by_system_id"><a class="viewcode-back" href="../../../api.html#issueshark.backends.bugzilla.BugzillaBackend._get_issue_id_by_system_id">[docs]</a>    <span class="k">def</span> <span class="nf">_get_issue_id_by_system_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">system_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the issue by their id that was assigned by the bugzilla ITS</span>
+
+<span class="sd">        :param system_id: id of the issue in the bugzilla ITS</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">issue_id</span> <span class="o">=</span> <span class="n">Issue</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">,</span> <span class="n">external_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">system_id</span><span class="p">))</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">id</span>
+        <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="n">issue_id</span> <span class="o">=</span> <span class="n">Issue</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">,</span> <span class="n">external_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">system_id</span><span class="p">))</span><span class="o">.</span><span class="n">save</span><span class="p">()</span><span class="o">.</span><span class="n">id</span>
+
+        <span class="k">return</span> <span class="n">issue_id</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2017, Fabian Trautsch
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

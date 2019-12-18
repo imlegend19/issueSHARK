@@ -1,0 +1,549 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>issueshark.backends.github &mdash; issueSHARK 2.0.4 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../../../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../../../_static/jquery.js"></script>
+        <script type="text/javascript" src="../../../_static/underscore.js"></script>
+        <script type="text/javascript" src="../../../_static/doctools.js"></script>
+        <script type="text/javascript" src="../../../_static/language_data.js"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> issueSHARK
+          
+
+          
+            
+            <img src="../../../_static/SmartSHARK_read_the_docs_logo.png" class="logo" alt="Logo"/>
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../intro.html">1. Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../extension.html">2. How to Extend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">3. API Documentation</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">issueSHARK</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>issueshark.backends.github</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for issueshark.backends.github</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">time</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">import</span> <span class="nn">copy</span>
+
+<span class="kn">from</span> <span class="nn">mongoengine</span> <span class="kn">import</span> <span class="n">DoesNotExist</span>
+<span class="kn">from</span> <span class="nn">requests</span> <span class="kn">import</span> <span class="n">RequestException</span>
+<span class="kn">from</span> <span class="nn">requests.auth</span> <span class="kn">import</span> <span class="n">HTTPBasicAuth</span>
+
+<span class="kn">from</span> <span class="nn">issueshark.backends.basebackend</span> <span class="kn">import</span> <span class="n">BaseBackend</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">requests</span>
+<span class="kn">import</span> <span class="nn">dateutil.parser</span>
+
+<span class="kn">from</span> <span class="nn">pycoshark.mongomodels</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s1">&#39;backend&#39;</span><span class="p">)</span>
+<span class="n">STATE_ALL</span> <span class="o">=</span> <span class="s1">&#39;all&#39;</span>
+<span class="n">STATE_CLOSED</span> <span class="o">=</span> <span class="s1">&#39;closed&#39;</span>
+<span class="n">STATE_OPEN</span> <span class="o">=</span> <span class="s1">&#39;open&#39;</span>
+
+
+<div class="viewcode-block" id="GitHubAPIError"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GitHubAPIError">[docs]</a><span class="k">class</span> <span class="nc">GitHubAPIError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Exception that is thrown if an error with the github API occur.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="GithubBackend"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GithubBackend">[docs]</a><span class="k">class</span> <span class="nc">GithubBackend</span><span class="p">(</span><span class="n">BaseBackend</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Backend that collects issue from github</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">identifier</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Identifier of the backend (github)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="s1">&#39;github&#39;</span>
+
+<div class="viewcode-block" id="GithubBackend.__init__"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GithubBackend.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfg</span><span class="p">,</span> <span class="n">issue_system_id</span><span class="p">,</span> <span class="n">project_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialization</span>
+<span class="sd">        Initializes the people dictionary see: :func:`~issueshark.backends.github.GithubBackend._get_people`</span>
+
+
+<span class="sd">        :param cfg: holds als configuration. Object of class :class:`~issueshark.config.Config`</span>
+<span class="sd">        :param issue_system_id: id of the issue system for which data should be collected. :class:`bson.objectid.ObjectId`</span>
+<span class="sd">        :param project_id: id of the project to which the issue system belongs. :class:`bson.objectid.ObjectId`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">issue_system_id</span><span class="p">,</span> <span class="n">project_id</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">debug_level</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">people</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="GithubBackend.process"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GithubBackend.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Processes the issues from github</span>
+
+<span class="sd">        1. Gets the updated_at value of the last issue that was stored (newest updated issue)</span>
+
+<span class="sd">        2. Gets issues since this date</span>
+
+<span class="sd">        3. Calls for each issue :func:`~issueshark.backends.github.GithubBackend.store_issue`</span>
+
+<span class="sd">        4. Raises the page counter</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting the collection process...&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Get last modification date (since then, we will collect bugs)</span>
+        <span class="n">last_issue</span> <span class="o">=</span> <span class="n">Issue</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s1">&#39;-updated_at&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s1">&#39;updated_at&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+        <span class="n">starting_date</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">last_issue</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">starting_date</span> <span class="o">=</span> <span class="n">last_issue</span><span class="o">.</span><span class="n">updated_at</span>
+
+        <span class="c1"># Get all issues</span>
+        <span class="n">issues</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_issues</span><span class="p">(</span><span class="n">start_date</span><span class="o">=</span><span class="n">starting_date</span><span class="p">)</span>
+
+        <span class="c1"># If no new bugs found, return</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">issues</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;No new issues found. Exiting...&#39;</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Otherwise, go through all issues (and all pages)</span>
+        <span class="n">page_number</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">issues</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">issue</span> <span class="ow">in</span> <span class="n">issues</span><span class="p">:</span>
+                <span class="n">mongo_issue</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">store_issue</span><span class="p">(</span><span class="n">issue</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_process_comments</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">issue</span><span class="p">[</span><span class="s1">&#39;number&#39;</span><span class="p">]),</span> <span class="n">mongo_issue</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_process_events</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">issue</span><span class="p">[</span><span class="s1">&#39;number&#39;</span><span class="p">]),</span> <span class="n">mongo_issue</span><span class="p">)</span>
+            <span class="n">page_number</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">issues</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_issues</span><span class="p">(</span><span class="n">pagecount</span><span class="o">=</span><span class="n">page_number</span><span class="p">,</span> <span class="n">start_date</span><span class="o">=</span><span class="n">starting_date</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="GithubBackend.store_issue"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GithubBackend.store_issue">[docs]</a>    <span class="k">def</span> <span class="nf">store_issue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raw_issue</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Transforms the issue from a github issue to our issue model</span>
+
+<span class="sd">        1. Transforms the issue to our model</span>
+
+<span class="sd">        2. Processes the comments of the issue. See: :func:`~issueshark.backends.github.GithubBackend._process_comments`</span>
+
+<span class="sd">        3. Processes the events of the issue. See: :func:`~issueshark.backends.github.GithubBackend._process_events`.</span>
+<span class="sd">        During this: set back the issue and store it again.</span>
+
+<span class="sd">        :param raw_issue: like we got it from github</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Processing issue </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">raw_issue</span><span class="p">)</span>
+        <span class="n">updated_at</span> <span class="o">=</span> <span class="n">dateutil</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;updated_at&#39;</span><span class="p">])</span>
+        <span class="n">created_at</span> <span class="o">=</span> <span class="n">dateutil</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;created_at&#39;</span><span class="p">])</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># We can not return here, as the issue might be updated. This means, that the title could be updated</span>
+            <span class="c1"># as well as comments and new events</span>
+            <span class="n">issue</span> <span class="o">=</span> <span class="n">Issue</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">,</span> <span class="n">external_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;number&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="n">issue</span> <span class="o">=</span> <span class="n">Issue</span><span class="p">(</span><span class="n">issue_system_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">issue_system_id</span><span class="p">,</span> <span class="n">external_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;number&#39;</span><span class="p">]))</span>
+
+        <span class="n">labels</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">label</span> <span class="ow">in</span> <span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;labels&#39;</span><span class="p">]:</span>
+            <span class="n">labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">label</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">])</span>
+
+        <span class="n">issue</span><span class="o">.</span><span class="n">reporter_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;user&#39;</span><span class="p">][</span><span class="s1">&#39;url&#39;</span><span class="p">])</span>
+        <span class="n">issue</span><span class="o">.</span><span class="n">creator_id</span> <span class="o">=</span> <span class="n">issue</span><span class="o">.</span><span class="n">reporter_id</span>
+        <span class="n">issue</span><span class="o">.</span><span class="n">title</span> <span class="o">=</span> <span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;title&#39;</span><span class="p">]</span>
+        <span class="n">issue</span><span class="o">.</span><span class="n">desc</span> <span class="o">=</span> <span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;body&#39;</span><span class="p">]</span>
+        <span class="n">issue</span><span class="o">.</span><span class="n">updated_at</span> <span class="o">=</span> <span class="n">updated_at</span>
+        <span class="n">issue</span><span class="o">.</span><span class="n">created_at</span> <span class="o">=</span> <span class="n">created_at</span>
+        <span class="n">issue</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;state&#39;</span><span class="p">]</span>
+        <span class="n">issue</span><span class="o">.</span><span class="n">labels</span> <span class="o">=</span> <span class="n">labels</span>
+
+        <span class="k">if</span> <span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;assignee&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">issue</span><span class="o">.</span><span class="n">assignee_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">raw_issue</span><span class="p">[</span><span class="s1">&#39;assignee&#39;</span><span class="p">][</span><span class="s1">&#39;url&#39;</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">issue</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="GithubBackend._process_events"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GithubBackend._process_events">[docs]</a>    <span class="k">def</span> <span class="nf">_process_events</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">system_id</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Processes events of an issue.</span>
+
+<span class="sd">        Go through all events and store them. If it has a commit_id in it, directly link it to the VCS data. If the</span>
+<span class="sd">        event affects the stored issue data (e.g., rename) set back the issue to its original state.</span>
+
+<span class="sd">        :param system_id: id of the issue like it is given from the github API</span>
+<span class="sd">        :param mongo_issue: object of our issue model</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get all events to the corresponding issue</span>
+        <span class="n">target_url</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="si">%s</span><span class="s1">/</span><span class="si">%s</span><span class="s1">/events&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">tracking_url</span><span class="p">,</span> <span class="n">system_id</span><span class="p">)</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_send_request</span><span class="p">(</span><span class="n">target_url</span><span class="p">)</span>
+
+        <span class="c1"># Go through all events and create mongo objects from it</span>
+        <span class="n">events_to_store</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">raw_event</span> <span class="ow">in</span> <span class="n">events</span><span class="p">:</span>
+            <span class="n">created_at</span> <span class="o">=</span> <span class="n">dateutil</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;created_at&#39;</span><span class="p">])</span>
+
+            <span class="c1"># If the event is already saved, we can just continue, because nothing will change on the event</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">Event</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">external_id</span><span class="o">=</span><span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">],</span> <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+                <span class="k">continue</span>
+            <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+                <span class="n">event</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span><span class="n">external_id</span><span class="o">=</span><span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">],</span>
+                              <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">created_at</span><span class="o">=</span><span class="n">created_at</span><span class="p">,</span> <span class="n">status</span><span class="o">=</span><span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;event&#39;</span><span class="p">])</span>
+
+            <span class="k">if</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;commit_id&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># It can happen that a commit from another repository references this issue. Therefore, we can not</span>
+                <span class="c1"># find the commit, as it is not part of THIS repository</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">vcs_system_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">system</span><span class="o">.</span><span class="n">id</span> <span class="k">for</span> <span class="n">system</span> <span class="ow">in</span>
+                                      <span class="n">VCSSystem</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">project_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">project_id</span><span class="p">)</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+
+                    <span class="n">event</span><span class="o">.</span><span class="n">commit_id</span> <span class="o">=</span> <span class="n">Commit</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">vcs_system_id__in</span><span class="o">=</span><span class="n">vcs_system_ids</span><span class="p">,</span>
+                                                 <span class="n">revision_hash</span><span class="o">=</span><span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;commit_id&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">id</span>
+                <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+                    <span class="k">pass</span>
+
+            <span class="k">if</span> <span class="s1">&#39;actor&#39;</span> <span class="ow">in</span> <span class="n">raw_event</span> <span class="ow">and</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;actor&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">event</span><span class="o">.</span><span class="n">author_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;actor&#39;</span><span class="p">][</span><span class="s1">&#39;url&#39;</span><span class="p">])</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_old_and_new_value_for_event</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">raw_event</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="p">)</span>
+            <span class="n">mongo_issue</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+            <span class="n">events_to_store</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+
+        <span class="c1"># Bulk insert to database</span>
+        <span class="k">if</span> <span class="n">events_to_store</span><span class="p">:</span>
+            <span class="n">Event</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">events_to_store</span><span class="p">,</span> <span class="n">load_bulk</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="GithubBackend._set_old_and_new_value_for_event"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GithubBackend._set_old_and_new_value_for_event">[docs]</a>    <span class="k">def</span> <span class="nf">_set_old_and_new_value_for_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">,</span> <span class="n">raw_event</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the old and new value for an event to be stored</span>
+
+<span class="sd">        :param event: event conforming to our model</span>
+<span class="sd">        :param raw_event: raw event like it is acquired from the github api</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;event&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;assigned&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s1">&#39;assignee&#39;</span> <span class="ow">in</span> <span class="n">raw_event</span> <span class="ow">and</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;assignee&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;assignee&#39;</span><span class="p">][</span><span class="s1">&#39;url&#39;</span><span class="p">])</span>
+
+
+            <span class="c1">#if &#39;assigner&#39; in raw_event and raw_event[&#39;assigner&#39;] is not None:</span>
+            <span class="c1">#    event.assigner_id = self._get_people(raw_event[&#39;assigner&#39;][&#39;url&#39;])</span>
+
+        <span class="k">if</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;event&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;unassigned&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s1">&#39;assignee&#39;</span> <span class="ow">in</span> <span class="n">raw_event</span> <span class="ow">and</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;assignee&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;assignee&#39;</span><span class="p">][</span><span class="s1">&#39;url&#39;</span><span class="p">])</span>
+
+            <span class="c1">#if &#39;assigner&#39; in raw_event and raw_event[&#39;assigner&#39;] is not None:</span>
+            <span class="c1">#    event.assigner_id = self._get_people(raw_event[&#39;assigner&#39;][&#39;url&#39;])</span>
+
+        <span class="k">if</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;event&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;labeled&#39;</span> <span class="ow">and</span> <span class="s1">&#39;label&#39;</span> <span class="ow">in</span> <span class="n">raw_event</span><span class="p">:</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;event&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;unlabeled&#39;</span> <span class="ow">and</span> <span class="s1">&#39;label&#39;</span> <span class="ow">in</span> <span class="n">raw_event</span><span class="p">:</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;event&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;milestoned&#39;</span> <span class="ow">and</span> <span class="s1">&#39;milestone&#39;</span> <span class="ow">in</span> <span class="n">raw_event</span><span class="p">:</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;milestone&#39;</span><span class="p">][</span><span class="s1">&#39;title&#39;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;event&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;demilestoned&#39;</span> <span class="ow">and</span> <span class="s1">&#39;milestone&#39;</span> <span class="ow">in</span> <span class="n">raw_event</span><span class="p">:</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;milestone&#39;</span><span class="p">][</span><span class="s1">&#39;title&#39;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;event&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;renamed&#39;</span> <span class="ow">and</span> <span class="s1">&#39;rename&#39;</span> <span class="ow">in</span> <span class="n">raw_event</span><span class="p">:</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">old_value</span> <span class="o">=</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;rename&#39;</span><span class="p">][</span><span class="s1">&#39;from&#39;</span><span class="p">]</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">new_value</span> <span class="o">=</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;rename&#39;</span><span class="p">][</span><span class="s1">&#39;to&#39;</span><span class="p">]</span>
+
+            <span class="n">mongo_issue</span><span class="o">.</span><span class="n">title</span> <span class="o">=</span> <span class="n">raw_event</span><span class="p">[</span><span class="s1">&#39;rename&#39;</span><span class="p">][</span><span class="s1">&#39;from&#39;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="GithubBackend._process_comments"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GithubBackend._process_comments">[docs]</a>    <span class="k">def</span> <span class="nf">_process_comments</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">system_id</span><span class="p">,</span> <span class="n">mongo_issue</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Processes the comments of an issue</span>
+
+<span class="sd">        :param system_id: id of the issue like it is given by the github API</span>
+<span class="sd">        :param mongo_issue: object of our issue model</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get all the comments for the corresponding issue</span>
+        <span class="n">target_url</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="si">%s</span><span class="s1">/</span><span class="si">%s</span><span class="s1">/comments&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">tracking_url</span><span class="p">,</span> <span class="n">system_id</span><span class="p">)</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_send_request</span><span class="p">(</span><span class="n">target_url</span><span class="p">)</span>
+
+        <span class="c1"># Go through all comments</span>
+        <span class="n">comments_to_insert</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">raw_comment</span> <span class="ow">in</span> <span class="n">comments</span><span class="p">:</span>
+            <span class="n">created_at</span> <span class="o">=</span> <span class="n">dateutil</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">raw_comment</span><span class="p">[</span><span class="s1">&#39;created_at&#39;</span><span class="p">])</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">IssueComment</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span><span class="n">external_id</span><span class="o">=</span><span class="n">raw_comment</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">],</span> <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+                <span class="k">continue</span>
+            <span class="k">except</span> <span class="n">DoesNotExist</span><span class="p">:</span>
+                <span class="n">comment</span> <span class="o">=</span> <span class="n">IssueComment</span><span class="p">(</span>
+                    <span class="n">external_id</span><span class="o">=</span><span class="n">raw_comment</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">],</span>
+                    <span class="n">issue_id</span><span class="o">=</span><span class="n">mongo_issue</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                    <span class="n">created_at</span><span class="o">=</span><span class="n">created_at</span><span class="p">,</span>
+                    <span class="n">author_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_people</span><span class="p">(</span><span class="n">raw_comment</span><span class="p">[</span><span class="s1">&#39;user&#39;</span><span class="p">][</span><span class="s1">&#39;url&#39;</span><span class="p">]),</span>
+                    <span class="n">comment</span><span class="o">=</span><span class="n">raw_comment</span><span class="p">[</span><span class="s1">&#39;body&#39;</span><span class="p">],</span>
+                <span class="p">)</span>
+                <span class="n">comments_to_insert</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">comment</span><span class="p">)</span>
+
+        <span class="c1"># If comments need to be inserted -&gt; bulk insert</span>
+        <span class="k">if</span> <span class="n">comments_to_insert</span><span class="p">:</span>
+            <span class="n">IssueComment</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">comments_to_insert</span><span class="p">,</span> <span class="n">load_bulk</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="GithubBackend.get_issues"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GithubBackend.get_issues">[docs]</a>    <span class="k">def</span> <span class="nf">get_issues</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">search_state</span><span class="o">=</span><span class="s1">&#39;all&#39;</span><span class="p">,</span> <span class="n">start_date</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sorting</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">,</span> <span class="n">pagecount</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets issues from the github API</span>
+
+<span class="sd">        :param search_state: state to be searched (e.g., all)</span>
+<span class="sd">        :param start_date: date from which issues should be collected</span>
+<span class="sd">        :param sorting: sorting of the issues</span>
+<span class="sd">        :param pagecount: page number</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Creates the target url for getting the issues</span>
+        <span class="n">target_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">tracking_url</span> <span class="o">+</span> <span class="s2">&quot;?state=&quot;</span> <span class="o">+</span> <span class="n">search_state</span> <span class="o">+</span> <span class="s2">&quot;&amp;page=&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">pagecount</span><span class="p">)</span> \
+            <span class="o">+</span> <span class="s2">&quot;&amp;per_page=100&amp;sort=updated&amp;direction=&quot;</span> <span class="o">+</span> <span class="n">sorting</span>
+
+        <span class="k">if</span> <span class="n">start_date</span><span class="p">:</span>
+            <span class="n">target_url</span> <span class="o">=</span> <span class="n">target_url</span> <span class="o">+</span> <span class="s2">&quot;&amp;since=&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">start_date</span><span class="p">)</span>
+
+        <span class="n">issues</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_send_request</span><span class="p">(</span><span class="n">target_url</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">issues</span></div>
+
+<div class="viewcode-block" id="GithubBackend._get_people"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GithubBackend._get_people">[docs]</a>    <span class="k">def</span> <span class="nf">_get_people</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_url</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the person via the user url</span>
+
+<span class="sd">        :param user_url: url to the github API to get information of the user</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Check if user was accessed before. This reduces the amount of API requests to github</span>
+        <span class="k">if</span> <span class="n">user_url</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">people</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">people</span><span class="p">[</span><span class="n">user_url</span><span class="p">]</span>
+
+        <span class="n">raw_user</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_send_request</span><span class="p">(</span><span class="n">user_url</span><span class="p">)</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">raw_user</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">raw_user</span><span class="p">[</span><span class="s1">&#39;login&#39;</span><span class="p">]</span>
+
+        <span class="n">email</span> <span class="o">=</span> <span class="n">raw_user</span><span class="p">[</span><span class="s1">&#39;email&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">email</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">email</span> <span class="o">=</span> <span class="s1">&#39;null&#39;</span>
+
+        <span class="n">people_id</span> <span class="o">=</span> <span class="n">People</span><span class="o">.</span><span class="n">objects</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+            <span class="n">email</span><span class="o">=</span><span class="n">email</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">upsert_one</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="n">email</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="n">raw_user</span><span class="p">[</span><span class="s1">&#39;login&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">people</span><span class="p">[</span><span class="n">user_url</span><span class="p">]</span> <span class="o">=</span> <span class="n">people_id</span>
+        <span class="k">return</span> <span class="n">people_id</span></div>
+
+<div class="viewcode-block" id="GithubBackend._send_request"><a class="viewcode-back" href="../../../api.html#issueshark.backends.github.GithubBackend._send_request">[docs]</a>    <span class="k">def</span> <span class="nf">_send_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">url</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sends arequest using the requests library to the url specified</span>
+
+<span class="sd">        :param url: url to which the request should be sent</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">auth</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">headers</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># If tokens are used, set the header, if not use basic authentication</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">use_token</span><span class="p">():</span>
+            <span class="n">headers</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;Authorization&#39;</span><span class="p">:</span> <span class="s1">&#39;token </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">token</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">auth</span> <span class="o">=</span> <span class="n">HTTPBasicAuth</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">issue_user</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">issue_password</span><span class="p">)</span>
+
+        <span class="c1"># Make the request</span>
+        <span class="n">tries</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="k">while</span> <span class="n">tries</span> <span class="o">&lt;=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Sending request to url: </span><span class="si">%s</span><span class="s2"> (Try: </span><span class="si">%s</span><span class="s2">)&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">tries</span><span class="p">))</span>
+            <span class="n">resp</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span><span class="p">,</span> <span class="n">proxies</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get_proxy_dictionary</span><span class="p">(),</span> <span class="n">auth</span><span class="o">=</span><span class="n">auth</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">resp</span><span class="o">.</span><span class="n">status_code</span> <span class="o">!=</span> <span class="mi">200</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Problem with getting data via url </span><span class="si">%s</span><span class="s2">. Error: </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">resp</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>
+                <span class="n">tries</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># It can happen that we exceed the github api limit. If we have only 1 request left we will wait</span>
+                <span class="k">if</span> <span class="s1">&#39;X-RateLimit-Remaining&#39;</span> <span class="ow">in</span> <span class="n">resp</span><span class="o">.</span><span class="n">headers</span> <span class="ow">and</span> <span class="nb">int</span><span class="p">(</span><span class="n">resp</span><span class="o">.</span><span class="n">headers</span><span class="p">[</span><span class="s1">&#39;X-RateLimit-Remaining&#39;</span><span class="p">])</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+
+                    <span class="c1"># We get the reset time (UTC Epoch seconds)</span>
+                    <span class="n">time_when_reset</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">fromtimestamp</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">resp</span><span class="o">.</span><span class="n">headers</span><span class="p">[</span><span class="s1">&#39;X-RateLimit-Reset&#39;</span><span class="p">]))</span>
+                    <span class="n">now</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+
+                    <span class="c1"># Then we substract and add 10 seconds to it (so that we do not request directly at the threshold</span>
+                    <span class="n">waiting_time</span> <span class="o">=</span> <span class="p">((</span><span class="n">time_when_reset</span><span class="o">-</span><span class="n">now</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span><span class="o">+</span><span class="mi">10</span>
+
+                    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Github API limit exceeded. Waiting for </span><span class="si">%0.5f</span><span class="s2"> seconds...&quot;</span> <span class="o">%</span> <span class="n">waiting_time</span><span class="p">)</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">waiting_time</span><span class="p">)</span>
+
+                    <span class="n">resp</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span><span class="p">,</span> <span class="n">proxies</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get_proxy_dictionary</span><span class="p">(),</span> <span class="n">auth</span><span class="o">=</span><span class="n">auth</span><span class="p">)</span>
+
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Got response: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">resp</span><span class="o">.</span><span class="n">json</span><span class="p">())</span>
+
+                <span class="k">return</span> <span class="n">resp</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+
+        <span class="k">raise</span> <span class="n">RequestException</span><span class="p">(</span><span class="s2">&quot;Problem with getting data via url </span><span class="si">%s</span><span class="s2">.&quot;</span> <span class="o">%</span> <span class="n">url</span><span class="p">)</span></div></div>
+
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2017, Fabian Trautsch
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>
